@@ -33,8 +33,7 @@ def get_extensions():
 
     sources = main_file + source_cpu
     extension = CppExtension
-    # extra_compile_args = {"cxx": []}
-    extra_compile_args = {"cxx": ["-std=c++17"]}
+    extra_compile_args = {"cxx": []}
 
     define_macros = []
 
@@ -48,7 +47,6 @@ def get_extensions():
             "-D__CUDA_NO_HALF_OPERATORS__",
             "-D__CUDA_NO_HALF_CONVERSIONS__",
             "-D__CUDA_NO_HALF2_OPERATORS__",
-            "--compiler-options=-std=c++17",
         ]
     else:
         if CUDA_HOME is None:
