@@ -48,7 +48,7 @@ def get_extensions():
             "-D__CUDA_NO_HALF_OPERATORS__",
             "-D__CUDA_NO_HALF_CONVERSIONS__",
             "-D__CUDA_NO_HALF2_OPERATORS__",
-            "-std=c++17",
+            "--compiler-options=-std=c++17",
         ]
     else:
         if CUDA_HOME is None:
