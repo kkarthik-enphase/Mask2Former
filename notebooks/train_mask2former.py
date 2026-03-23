@@ -208,9 +208,13 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
 
     print(f"Training for {epochs} epochs, {len(dataset)} samples, batch_size={batch_size}")
 
+    import time
+    save_every_steps = 1000
+
     for epoch in range(epochs):
         model.train()
         total_loss = 0.0
+        t0 = time.time()
         for step, batch in enumerate(dataloader):
             batch = {
                 k: [m.to(device) for m in v] if isinstance(v, list) else v.to(device)
@@ -222,16 +226,30 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
+
             if step % 10 == 0:
-                print(f"  Epoch {epoch+1} step {step}/{len(dataloader)} loss={loss.item():.4f}")
+                elapsed = time.time() - t0
+                avg_step_time = elapsed / (step + 1)
+                eta_epoch = avg_step_time * (len(dataloader) - step)
+                print(f"  Epoch {epoch+1} step {step}/{len(dataloader)} "
+                      f"loss={loss.item():.4f}  "
+                      f"step_time={avg_step_time:.2f}s  "
+                      f"ETA epoch={eta_epoch/60:.1f}min")
+
+            if step > 0 and step % save_every_steps == 0:
+                ckpt = os.path.join(output_dir, f"epoch_{epoch+1}_step_{step}")
+                model.save_pretrained(ckpt)
+                processor.save_pretrained(ckpt)
+                print(f"  [Checkpoint] Saved: {ckpt}")
 
         avg = total_loss / len(dataloader)
-        print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}")
+        epoch_time = time.time() - t0
+        print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  time={epoch_time/60:.1f}min")
 
         ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
         model.save_pretrained(ckpt)
         processor.save_pretrained(ckpt)
-        print(f"  Saved: {ckpt}")
+        print(f"  [Checkpoint] Saved: {ckpt}")
 
     print("Training complete.")
 
