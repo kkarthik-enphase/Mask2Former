@@ -234,7 +234,7 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
         print(f"Training for {epochs} epochs, {len(dataset)} samples, "
               f"batch_size={batch_size} x {world_size} GPUs")
 
-    save_every_steps = 1000
+    save_every_epochs = 5  # save checkpoint every N epochs
 
     for epoch in range(epochs):
         if is_distributed:
@@ -263,22 +263,16 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
                       f"step_time={avg_step_time:.2f}s  "
                       f"ETA epoch={eta_epoch/60:.1f}min")
 
-            if is_main and step > 0 and step % save_every_steps == 0:
-                raw = model.module if is_distributed else model
-                ckpt = os.path.join(output_dir, f"epoch_{epoch+1}_step_{step}")
-                raw.save_pretrained(ckpt)
-                processor.save_pretrained(ckpt)
-                print(f"  [Checkpoint] Saved: {ckpt}")
-
         avg = total_loss / len(dataloader)
         epoch_time = time.time() - t0
         if is_main:
             print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  time={epoch_time/60:.1f}min")
-            raw = model.module if is_distributed else model
-            ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
-            raw.save_pretrained(ckpt)
-            processor.save_pretrained(ckpt)
-            print(f"  [Checkpoint] Saved: {ckpt}")
+            if (epoch + 1) % save_every_epochs == 0:
+                raw = model.module if is_distributed else model
+                ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
+                raw.save_pretrained(ckpt)
+                processor.save_pretrained(ckpt)
+                print(f"  [Checkpoint] Saved: {ckpt}")
 
     if is_distributed:
         dist.destroy_process_group()
