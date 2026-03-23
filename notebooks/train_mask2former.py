@@ -148,11 +148,11 @@ class RoofFacetDataset(torch.utils.data.Dataset):
         if len(masks) == 0:
             # No annotations — skip with empty instance map
             instance_map = np.zeros((image.height, image.width), dtype=np.int32)
-            instance_id_to_semantic_id = {}
+            instance_id_to_semantic_id = {0: 0}  # Add background label
         else:
             # Build instance segmentation map: each pixel = instance ID (0 = background)
             instance_map = np.zeros((image.height, image.width), dtype=np.int32)
-            instance_id_to_semantic_id = {}
+            instance_id_to_semantic_id = {0: 0}  # Add background label
             for i, mask in enumerate(masks):
                 instance_id = i + 1  # 1-indexed
                 instance_map[mask] = instance_id
@@ -165,6 +165,7 @@ class RoofFacetDataset(torch.utils.data.Dataset):
             segmentation_maps=instance_seg,
             instance_id_to_semantic_id=instance_id_to_semantic_id,
             return_tensors="pt",
+            reduce_labels=False,
         )
         encoding = {k: v.squeeze() for k, v in encoding.items()}
         return encoding
