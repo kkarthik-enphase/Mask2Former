@@ -178,12 +178,31 @@ class RoofFacetDataset(torch.utils.data.Dataset):
 def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
                  lr=5e-5, base_model="facebook/mask2former-swin-small-coco-instance"):
 
+    import time
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    from torch.utils.data.distributed import DistributedSampler
     from transformers import AutoImageProcessor, Mask2FormerForUniversalSegmentation
     from torch.optim import AdamW
     from torch.utils.data import DataLoader
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Device: {device}")
+    # ── DDP setup ────────────────────────────────────────────────────────────
+    is_distributed = "RANK" in os.environ
+    if is_distributed:
+        dist.init_process_group(backend="nccl")
+        local_rank = int(os.environ["LOCAL_RANK"])
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+        device = torch.device(f"cuda:{local_rank}")
+        torch.cuda.set_device(device)
+    else:
+        rank = 0
+        world_size = 1
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    is_main = (rank == 0)
+    if is_main:
+        print(f"Device: {device}  world_size={world_size}")
 
     # Single class: roof_facet
     id2label = {0: "roof_facet"}
@@ -197,21 +216,29 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
         ignore_mismatched_sizes=True,
     ).to(device)
 
+    if is_distributed:
+        model = DDP(model, device_ids=[local_rank], find_unused_parameters=True)
+
     dataset = RoofFacetDataset(img_folder, gt_folder, processor)
+    sampler = DistributedSampler(dataset, shuffle=True) if is_distributed else None
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=True,
+        dataset, batch_size=batch_size,
+        shuffle=(sampler is None),
+        sampler=sampler,
         num_workers=4, collate_fn=collate_fn
     )
 
     optimizer = AdamW(model.parameters(), lr=lr)
-    os.makedirs(output_dir, exist_ok=True)
+    if is_main:
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Training for {epochs} epochs, {len(dataset)} samples, "
+              f"batch_size={batch_size} x {world_size} GPUs")
 
-    print(f"Training for {epochs} epochs, {len(dataset)} samples, batch_size={batch_size}")
-
-    import time
     save_every_steps = 1000
 
     for epoch in range(epochs):
+        if is_distributed:
+            sampler.set_epoch(epoch)
         model.train()
         total_loss = 0.0
         t0 = time.time()
@@ -227,7 +254,7 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
             optimizer.step()
             total_loss += loss.item()
 
-            if step % 10 == 0:
+            if is_main and step % 10 == 0:
                 elapsed = time.time() - t0
                 avg_step_time = elapsed / (step + 1)
                 eta_epoch = avg_step_time * (len(dataloader) - step)
@@ -236,22 +263,27 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
                       f"step_time={avg_step_time:.2f}s  "
                       f"ETA epoch={eta_epoch/60:.1f}min")
 
-            if step > 0 and step % save_every_steps == 0:
+            if is_main and step > 0 and step % save_every_steps == 0:
+                raw = model.module if is_distributed else model
                 ckpt = os.path.join(output_dir, f"epoch_{epoch+1}_step_{step}")
-                model.save_pretrained(ckpt)
+                raw.save_pretrained(ckpt)
                 processor.save_pretrained(ckpt)
                 print(f"  [Checkpoint] Saved: {ckpt}")
 
         avg = total_loss / len(dataloader)
         epoch_time = time.time() - t0
-        print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  time={epoch_time/60:.1f}min")
+        if is_main:
+            print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  time={epoch_time/60:.1f}min")
+            raw = model.module if is_distributed else model
+            ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
+            raw.save_pretrained(ckpt)
+            processor.save_pretrained(ckpt)
+            print(f"  [Checkpoint] Saved: {ckpt}")
 
-        ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
-        model.save_pretrained(ckpt)
-        processor.save_pretrained(ckpt)
-        print(f"  [Checkpoint] Saved: {ckpt}")
-
-    print("Training complete.")
+    if is_distributed:
+        dist.destroy_process_group()
+    if is_main:
+        print("Training complete.")
 
 
 def collate_fn(batch):
