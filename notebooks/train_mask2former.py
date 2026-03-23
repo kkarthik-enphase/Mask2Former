@@ -208,12 +208,26 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
     id2label = {0: "roof_facet"}
     label2id = {"roof_facet": 0}
 
-    processor = AutoImageProcessor.from_pretrained(base_model)
+    # ── Resume: find latest checkpoint in output_dir ────────────────────────
+    start_epoch = 0
+    resume_from = None
+    if os.path.isdir(output_dir):
+        saved = sorted(
+            [d for d in os.listdir(output_dir) if d.startswith("epoch_")],
+            key=lambda x: int(x.split("_")[1])
+        )
+        if saved:
+            resume_from = os.path.join(output_dir, saved[-1])
+            start_epoch = int(saved[-1].split("_")[1])
+            if is_main:
+                print(f"Resuming from {resume_from} (epoch {start_epoch})")
+
+    processor = AutoImageProcessor.from_pretrained(resume_from or base_model)
     model = Mask2FormerForUniversalSegmentation.from_pretrained(
-        base_model,
+        resume_from or base_model,
         id2label=id2label,
         label2id=label2id,
-        ignore_mismatched_sizes=True,
+        ignore_mismatched_sizes=(resume_from is None),
     ).to(device)
 
     if is_distributed:
@@ -236,7 +250,7 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
 
     save_every_epochs = 5  # save checkpoint every N epochs
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         if is_distributed:
             sampler.set_epoch(epoch)
         model.train()
