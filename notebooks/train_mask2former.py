@@ -167,7 +167,7 @@ class RoofFacetDataset(torch.utils.data.Dataset):
             return_tensors="pt",
             reduce_labels=False,
         )
-        encoding = {k: v.squeeze() for k, v in encoding.items()}
+        encoding = {k: v.squeeze() if isinstance(v, torch.Tensor) else v[0] for k, v in encoding.items()}
         return encoding
 
 
