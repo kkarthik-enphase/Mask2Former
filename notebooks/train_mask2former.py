@@ -212,7 +212,10 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
         model.train()
         total_loss = 0.0
         for step, batch in enumerate(dataloader):
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch = {
+                k: [m.to(device) for m in v] if isinstance(v, list) else v.to(device)
+                for k, v in batch.items()
+            }
             outputs = model(**batch)
             loss = outputs.loss
             optimizer.zero_grad()
