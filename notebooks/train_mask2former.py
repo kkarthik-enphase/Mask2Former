@@ -243,6 +243,8 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
     )
 
     optimizer = AdamW(model.parameters(), lr=lr)
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7, last_epoch=start_epoch - 1)
     if is_main:
         os.makedirs(output_dir, exist_ok=True)
         print(f"Training for {epochs} epochs, {len(dataset)} samples, "
@@ -277,10 +279,12 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
                       f"step_time={avg_step_time:.2f}s  "
                       f"ETA epoch={eta_epoch/60:.1f}min")
 
+        scheduler.step()
         avg = total_loss / len(dataloader)
         epoch_time = time.time() - t0
+        current_lr = scheduler.get_last_lr()[0]
         if is_main:
-            print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  time={epoch_time/60:.1f}min")
+            print(f"Epoch {epoch+1}/{epochs}  avg_loss={avg:.4f}  lr={current_lr:.2e}  time={epoch_time/60:.1f}min")
             if (epoch + 1) % save_every_epochs == 0:
                 raw = model.module if is_distributed else model
                 ckpt = os.path.join(output_dir, f"epoch_{epoch+1}")
