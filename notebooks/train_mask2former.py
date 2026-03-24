@@ -243,6 +243,8 @@ def run_training(img_folder, gt_folder, output_dir, epochs=50, batch_size=2,
     )
 
     optimizer = AdamW(model.parameters(), lr=lr)
+    for pg in optimizer.param_groups:
+        pg.setdefault("initial_lr", lr)
     from torch.optim.lr_scheduler import CosineAnnealingLR
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-7, last_epoch=start_epoch - 1)
     if is_main:
