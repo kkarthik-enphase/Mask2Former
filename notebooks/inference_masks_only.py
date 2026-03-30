@@ -38,7 +38,11 @@ def run_inference(image_path, checkpoint_path, output_dir):
     
     # Get masks and scores
     masks = results["segmentation"].cpu().numpy()  # [N, H, W]
-    scores = results["scores"].cpu().numpy()  # [N]
+    # Some models don't return scores, use all masks
+    if "scores" in results:
+        scores = results["scores"].cpu().numpy()  # [N]
+    else:
+        scores = np.ones(len(masks))  # Assume all masks are valid
     
     # Create visualization
     vis_image = image.copy()
