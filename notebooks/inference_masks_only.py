@@ -32,13 +32,13 @@ def run_inference(image_path, checkpoint_path, output_dir):
     with torch.no_grad():
         outputs = model(**inputs)
     
-    # Post-process to get masks
+    # Post-process to get instance masks
     target_size = (image.height, image.width)
-    results = processor.post_process_semantic_segmentation(outputs, target_sizes=[target_size])[0]
+    results = processor.post_process_instance_segmentation(outputs, target_sizes=[target_size])[0]
     
-    # Convert to binary masks
-    segmentation = results.cpu().numpy()
-    unique_labels = np.unique(segmentation)
+    # Get masks and scores
+    masks = results["segmentation"].cpu().numpy()  # [N, H, W]
+    scores = results["scores"].cpu().numpy()  # [N]
     
     # Create visualization
     vis_image = image.copy()
@@ -48,10 +48,11 @@ def run_inference(image_path, checkpoint_path, output_dir):
     colors = [(255, 0, 0, 128), (0, 255, 0, 128), (0, 0, 255, 128), 
               (255, 255, 0, 128), (255, 0, 255, 128), (0, 255, 255, 128)]
     
-    for i, label in enumerate(unique_labels):
-        if label == 0:  # Skip background
+    for i in range(len(masks)):
+        mask = masks[i]  # Binary mask [H, W]
+        score = scores[i]
+        if score < 0.5:  # Skip low-confidence predictions
             continue
-        mask = (segmentation == label)
         color = colors[i % len(colors)]
         
         # Create overlay for this mask
