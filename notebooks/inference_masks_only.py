@@ -32,48 +32,41 @@ def run_inference(image_path, checkpoint_path, output_dir):
     with torch.no_grad():
         outputs = model(**inputs)
     
-    # Post-process to get instance masks
+    # Post-process to get instance segmentation map
     target_size = (image.height, image.width)
-    results = processor.post_process_instance_segmentation(outputs, target_sizes=[target_size])[0]
+    results = processor.post_process_instance_segmentation(
+        outputs, target_sizes=[target_size], threshold=0.5)[0]
     
-    # Get masks and scores
-    masks = results["segmentation"].cpu().numpy()  # [N, H, W]
-    # Some models don't return scores, use all masks
-    if "scores" in results:
-        scores = results["scores"].cpu().numpy()  # [N]
-    else:
-        scores = np.ones(len(masks))  # Assume all masks are valid
+    # segmentation is a label map [H, W] where each pixel = instance_id
+    seg_map = results["segmentation"].cpu().numpy()
+    segments_info = results["segments_info"]
     
-    # Create visualization
-    vis_image = image.copy()
-    draw = ImageDraw.Draw(vis_image, "RGBA")
+    print(f"  {image_name}: found {len(segments_info)} instances")
     
-    # Generate colors for each mask
-    colors = [(255, 0, 0, 128), (0, 255, 0, 128), (0, 0, 255, 128), 
-              (255, 255, 0, 128), (255, 0, 255, 128), (0, 255, 255, 128)]
+    # Create RGBA overlay
+    img_rgba = image.convert("RGBA")
+    overlay = np.zeros((image.height, image.width, 4), dtype=np.uint8)
     
-    for i in range(len(masks)):
-        mask = masks[i]  # Binary mask [H, W]
-        score = scores[i]
-        if score < 0.5:  # Skip low-confidence predictions
+    # Generate distinct colors per instance
+    np.random.seed(42)
+    colors = np.random.randint(50, 255, size=(max(len(segments_info), 1), 3))
+    
+    for idx, seg_info in enumerate(segments_info):
+        inst_id = seg_info["id"]
+        mask = (seg_map == inst_id)
+        if mask.sum() == 0:
             continue
-        color = colors[i % len(colors)]
-        
-        # Create overlay for this mask
-        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        overlay_draw = ImageDraw.Draw(overlay)
-        
-        # Fill mask regions
-        mask_img = Image.fromarray((mask * 255).astype(np.uint8))
-        overlay_draw.bitmap((0, 0), mask_img, fill=color)
-        
-        # Composite onto original image
-        vis_image = Image.alpha_composite(vis_image.convert('RGBA'), overlay).convert('RGB')
+        r, g, b = colors[idx % len(colors)]
+        overlay[mask] = [r, g, b, 140]  # Semi-transparent
+    
+    # Composite overlay onto original image
+    overlay_img = Image.fromarray(overlay, "RGBA")
+    vis_image = Image.alpha_composite(img_rgba, overlay_img).convert("RGB")
     
     # Save with original filename
     output_path = Path(output_dir) / f"{image_name}_masks.jpg"
     vis_image.save(output_path)
-    print(f"Saved: {output_path}")
+    print(f"  Saved: {output_path}")
     
     return output_path
 
